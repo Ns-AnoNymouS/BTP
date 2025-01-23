@@ -152,6 +152,24 @@ def process_video(input_path: str, output_path: str) -> str:
 
     return reencoded_output_path
 
+def check_orientation(landmarks):
+    """
+    Determines orientation (facing forward or sideways) based on shoulder z-depth difference.
+    """
+    left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
+    right_shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value]
+
+    # Calculate the z-depth difference between shoulders
+    z_diff = abs(left_shoulder.z - right_shoulder.z)
+
+    # Log the z-difference for debugging
+    print(f"Z-Depth Difference: {z_diff:.3f}")
+
+    # Threshold to determine orientation
+    if z_diff < 0.2:  # Adjust based on testing
+        return "Facing Forward"
+    else:
+        return "Sideways"
 
 def get_stability(input_path, output_path) -> str:
     """
@@ -189,6 +207,7 @@ def get_stability(input_path, output_path) -> str:
 
         results = pose.process(rgb_frame)
         if results.pose_landmarks:
+            orientation = check_orientation(results.pose_landmarks.landmark)
             mp_drawing.draw_landmarks(
                 frame,
                 results.pose_landmarks,
@@ -230,6 +249,8 @@ def get_stability(input_path, output_path) -> str:
                 (255, 255, 0),
                 -1,
             )
+            cv2.putText(frame, f"Orientation: {orientation}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            
             cv2.putText(
                 frame,
                 f"Falls: {fall_count}",
