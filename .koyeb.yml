@@ -8,7 +8,7 @@ instance_type: micro
 routes:
   - path: /
     type: http
-    port: 8080
+    port: 5000
 build:
   commands:
     - pip install -r requirements.txt
