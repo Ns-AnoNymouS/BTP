@@ -182,6 +182,7 @@ def get_stability(input_path, output_path) -> str:
     Returns:
         str: Path to the re-encoded output video file.
     """
+    print("stability process...")
     fall_count = 0
     is_stable = False
     cap = cv2.VideoCapture(input_path)
@@ -375,6 +376,7 @@ def stability():
     Returns:
         Response: Processed video file with stability analysis or error message.
     """
+    print("Processing stability...")
     if "file" not in request.files:
         return jsonify({"error": "No file part in the request"}), 400
 
