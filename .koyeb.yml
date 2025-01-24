@@ -1,0 +1,17 @@
+name: balance-test
+type: service
+description: The backend server which will process the video and say whether he is stable or not
+env: python
+regions:
+  - fra # Frankfurt, change this to your preferred region
+instance_type: micro
+routes:
+  - path: /
+    type: http
+    port: 8080
+build:
+  commands:
+    - pip install -r requirements.txt
+    - apt-get update && apt-get install -y ffmpeg # Install FFmpeg
+run:
+  command: python server.py
