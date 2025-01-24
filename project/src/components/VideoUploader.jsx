@@ -15,7 +15,7 @@ const VideoUploader = ({ onVideoProcessed }) => {
     try {
       setProcessing(true);
       const response = await axios.post(
-        "http://127.0.0.1:5000/stability",
+        `${process.env.REACT_APP_BACKEND_URL}/stability`,
         formData,
         {
           headers: {
