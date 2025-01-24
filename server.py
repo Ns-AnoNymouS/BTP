@@ -376,36 +376,39 @@ def stability():
     Returns:
         Response: Processed video file with stability analysis or error message.
     """
-    print("Processing stability...")
-    if "file" not in request.files:
-        return jsonify({"error": "No file part in the request"}), 400
-
-    file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"error": "No file selected for uploading"}), 400
-
-    # Save the uploaded file temporarily
-    input_path = os.path.join("temp", file.filename)
-    output_path = os.path.join("temp", "processed_" + file.filename)
-    os.makedirs("temp", exist_ok=True)
-    file.save(input_path)
-
     try:
-        output_file = get_stability(input_path, output_path)
-        return send_file(output_file, mimetype="video/mp4")
-    except Exception as e:
-        import traceback
+        print("Processing stability...")
+        if "file" not in request.files:
+            return jsonify({"error": "No file part in the request"}), 400
 
-        traceback.print_exc()
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "No file selected for uploading"}), 400
+
+        # Save the uploaded file temporarily
+        input_path = os.path.join("temp", file.filename)
+        output_path = os.path.join("temp", "processed_" + file.filename)
+        os.makedirs("temp", exist_ok=True)
+        file.save(input_path)
+
+        try:
+            output_file = get_stability(input_path, output_path)
+            return send_file(output_file, mimetype="video/mp4")
+        except Exception as e:
+            import traceback
+
+            traceback.print_exc()
+            print(e)
+            return jsonify({"error": str(e)}), 500
+        finally:
+            # Clean up temporary files
+            if os.path.exists(input_path):
+                os.remove(input_path)
+            if os.path.exists(output_path):
+                os.remove(output_path)
+    except Exception as e:
         print(e)
         return jsonify({"error": str(e)}), 500
-    finally:
-        # Clean up temporary files
-        if os.path.exists(input_path):
-            os.remove(input_path)
-        if os.path.exists(output_path):
-            os.remove(output_path)
-
 
 if __name__ == "__main__":
     # Run the Flask app on all available network interfaces
