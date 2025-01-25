@@ -1,5 +1,4 @@
 import React, { useState, useRef } from "react";
-import axios from "axios";
 import { FiUpload } from "react-icons/fi";
 import axios from "axios";
 import http from "http";
