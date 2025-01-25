@@ -1,6 +1,25 @@
 import React, { useState, useRef } from "react";
 import axios from "axios";
 import { FiUpload } from "react-icons/fi";
+import axios from "axios";
+import http from "http";
+import https from "https";
+
+// Create an HTTP/HTTPS agent with keep-alive and a timeout of 1 hour
+const agentOptions = {
+  keepAlive: true,
+  keepAliveMsecs: 3600000, // 1 hour in milliseconds
+};
+
+const httpAgent = new http.Agent(agentOptions);
+const httpsAgent = new https.Agent(agentOptions);
+
+// Create an Axios instance
+const axiosInstance = axios.create({
+  httpAgent,
+  httpsAgent,
+  timeout: 3600000, // Optional: Request timeout (1 hour)
+});
 
 const VideoUploader = ({ onVideoProcessed }) => {
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -14,7 +33,7 @@ const VideoUploader = ({ onVideoProcessed }) => {
 
     try {
       setProcessing(true);
-      const response = await axios.post(
+      const response = await axiosInstance.post(
         `${import.meta.env.VITE_APP_BACKEND_URL}/stability`,
         formData,
         {
