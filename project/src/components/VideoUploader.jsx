@@ -1,8 +1,6 @@
 import React, { useState, useRef } from "react";
 import { FiUpload } from "react-icons/fi";
 import axios from "axios";
-import http from "http";
-import https from "https";
 
 // Create an HTTP/HTTPS agent with keep-alive and a timeout of 1 hour
 const agentOptions = {
@@ -10,13 +8,8 @@ const agentOptions = {
   keepAliveMsecs: 3600000, // 1 hour in milliseconds
 };
 
-const httpAgent = new http.Agent(agentOptions);
-const httpsAgent = new https.Agent(agentOptions);
-
 // Create an Axios instance
 const axiosInstance = axios.create({
-  httpAgent,
-  httpsAgent,
   timeout: 3600000, // Optional: Request timeout (1 hour)
 });
 
