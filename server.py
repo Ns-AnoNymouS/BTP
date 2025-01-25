@@ -379,19 +379,22 @@ def stability():
     try:
         print("Processing stability...")
         if "file" not in request.files:
+            print("file not recieved")
             return jsonify({"error": "No file part in the request"}), 400
 
+        print("file recieved", request.files)
         file = request.files["file"]
         if file.filename == "":
             return jsonify({"error": "No file selected for uploading"}), 400
 
+        print("creating file locations")
         # Save the uploaded file temporarily
         input_path = os.path.join("temp", file.filename)
         output_path = os.path.join("temp", "processed_" + file.filename)
         os.makedirs("temp", exist_ok=True)
         file.save(input_path)
-
         try:
+            print("Processing stability")
             output_file = get_stability(input_path, output_path)
             return send_file(output_file, mimetype="video/mp4")
         except Exception as e:
