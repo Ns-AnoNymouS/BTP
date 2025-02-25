@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "human balance measurement"
+version = "0.1.0"
+description = ""
+authors = ["Ns-AnoNymouS <lankotunaveen@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+flask = "^3.1.0"
+flask-cors = "^5.0.0"
+opencv-python = "^4.11.0.86"
+mediapipe = "^0.10.20"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -8,7 +8,7 @@ import {
   FiVolumeX
 } from 'react-icons/fi';
 
-const VideoPlayer = ({ videoUrl }) => {
+const VideoPlayer = ({ videoUrl, unstableTime, averageUnstableTime }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -115,6 +115,8 @@ const VideoPlayer = ({ videoUrl }) => {
           </div>
         </div>
       </div>
+      <div className="section-title">Unstable Time: {unstableTime} sec</div>
+      <div className="section-title">Average Unstable Time: {averageUnstableTime} sec</div>
     </div>
   );
 };

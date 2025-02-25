@@ -10,6 +10,9 @@ WORKDIR /app
 # Copy the application files
 COPY . /app
 
+WORKDIR /backend
+
+# Set environment variables
 ENV PYTHONUNBUFFERED=1
 
 # Install Python dependencies

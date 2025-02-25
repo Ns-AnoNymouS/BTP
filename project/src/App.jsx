@@ -5,6 +5,8 @@ import "./App.css";
 
 function App() {
   const [processedVideoUrl, setProcessedVideoUrl] = useState(null);
+  const [unstableTime, setUnstableTime] = useState(0);
+  const [averageUnstableTime, setAverageUnstableTime] = useState(0);
   useEffect(() => {
     return () => {
       URL.revokeObjectURL(processedVideoUrl); // Clean up the object URL when component unmounts
@@ -31,7 +33,7 @@ function App() {
               <h2 className="text-2xl font-semibold mb-6 text-center">
                 Upload Your Video
               </h2>
-              <VideoUploader onVideoProcessed={setProcessedVideoUrl} />
+              <VideoUploader onVideoProcessed={setProcessedVideoUrl} setAverageUnstableTime={setAverageUnstableTime} setUnstableTime={setUnstableTime}/>
             </section>
           )}
 
@@ -40,7 +42,7 @@ function App() {
               <h2 className="text-2xl font-semibold mb-6 text-center">
                 Analysis Results
               </h2>
-              <VideoPlayer videoUrl={processedVideoUrl} />
+              <VideoPlayer videoUrl={processedVideoUrl} unstableTime={unstableTime} averageUnstableTime={averageUnstableTime} />
             </section>
           )}
         </div>

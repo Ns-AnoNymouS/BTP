@@ -13,7 +13,7 @@ const axiosInstance = axios.create({
   timeout: 3600000, // Optional: Request timeout (1 hour)
 });
 
-const VideoUploader = ({ onVideoProcessed }) => {
+const VideoUploader = ({ onVideoProcessed, setUnstableTime, setAverageUnstableTime }) => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processing, setProcessing] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -48,6 +48,10 @@ const VideoUploader = ({ onVideoProcessed }) => {
       window.open(videoUrl, "_blank");
       console.log("Video uploaded:", videoUrl);      
       onVideoProcessed(videoUrl);
+      console.log(response.headers);
+      console.log(response.headers.get('x-unstable-time'))
+      setAverageUnstableTime(response.headers["x-average-unstable-time"])
+      setUnstableTime(response.headers["x-unstable-time"]);
     } catch (error) {
       console.error("Error uploading video:", error);
     } finally {

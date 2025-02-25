@@ -10,7 +10,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 # Initialize Flask app
 app = Flask(__name__, static_folder="temp", static_url_path="/video")
-CORS(app)
+CORS(app, expose_headers=["X-Extra-Info", "X-User-Message"])  # Ensure headers are accessible
 
 # Initialize Mediapipe Pose solution
 mp_pose = mp.solutions.pose
@@ -184,6 +184,7 @@ def get_stability(input_path, output_path) -> str:
     """
     print("stability process...")
     fall_count = 0
+    unstable_frames_count = 0
     is_stable = False
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
@@ -202,7 +203,7 @@ def get_stability(input_path, output_path) -> str:
         ret, frame = cap.read()
         if not ret:
             break
-
+        
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image_height, image_width, _ = frame.shape
 
@@ -236,11 +237,13 @@ def get_stability(input_path, output_path) -> str:
 
             # Define BOS (e.g., foot region - here using LEFT_FOOT_INDEX)
             base_x = keypoints[mp.solutions.pose.PoseLandmark.LEFT_FOOT_INDEX].x
+            base_foot_x = keypoints[mp_pose.PoseLandmark.LEFT_KNEE].x
             base_y = keypoints[mp.solutions.pose.PoseLandmark.LEFT_FOOT_INDEX].y
 
             # Stability condition
             stable = (
-                abs(cog_coordinates[0] / frame.shape[1] - base_x) < 0.1
+                abs(cog_coordinates[0] / frame.shape[1] - base_x) < 0.075 or
+                abs(cog_coordinates[0] / frame.shape[1] - base_foot_x) < 0.075
             )  # Example threshold
 
             cv2.circle(
@@ -264,6 +267,7 @@ def get_stability(input_path, output_path) -> str:
 
             # Notify user about instability
             if not stable:
+                unstable_frames_count += 1
                 cv2.putText(
                     frame,
                     "Instability Detected!",
@@ -295,7 +299,16 @@ def get_stability(input_path, output_path) -> str:
 
     cap.release()
     out.release()
+    
+    unstable_time = unstable_frames_count / frame_rate
+    print("Unstable time: ", unstable_time)
 
+    if fall_count != 0:
+        average_instable_time = unstable_time / fall_count
+    else:
+        average_instable_time = 0
+    print("Average instability time: ", average_instable_time)
+    
     # Use ffmpeg to re-encode the video to the desired format (e.g., MP4)
     reencoded_output_path = os.path.join(
         "temp", "formatted_" + os.path.basename(input_path)
@@ -319,7 +332,7 @@ def get_stability(input_path, output_path) -> str:
     if os.path.exists(output_path):
         os.remove(output_path)
 
-    return reencoded_output_path
+    return reencoded_output_path, unstable_time, average_instable_time
 
 
 @app.route("/")
@@ -395,8 +408,14 @@ def stability():
         file.save(input_path)
         try:
             print("Processing stability")
-            output_file = get_stability(input_path, output_path)
-            return send_file(output_file, mimetype="video/mp4")
+            output_file, unstable_time, average_instable_time = get_stability(input_path, output_path)
+            response = send_file(output_file, mimetype="video/mp4")
+
+            # Add additional headers for extra data
+            response.headers["X-Unstable-time"] = str(round(unstable_time, 2))
+            response.headers["X-Average-unstable-time"] = str(round(average_instable_time, 2))
+            response.headers['Access-Control-Expose-Headers']= "X-Average-unstable-time, X-Unstable-time"
+            return response
         except Exception as e:
             import traceback
 
@@ -407,8 +426,8 @@ def stability():
             # Clean up temporary files
             if os.path.exists(input_path):
                 os.remove(input_path)
-            if os.path.exists(output_path):
-                os.remove(output_path)
+            # if os.path.exists(output_path):
+            #     os.remove(output_path)
     except Exception as e:
         print(e)
         return jsonify({"error": str(e)}), 500
