@@ -4,3 +4,5 @@ videos/
 temp/
 .env
 frames/
+build/
+dist/
