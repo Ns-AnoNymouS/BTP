@@ -1,9 +1,16 @@
 import os
 import cv2
+import subprocess
 import mediapipe as mp
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
 
 # Suppress TensorFlow Lite warnings
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
+# Initialize Flask app
+app = Flask(__name__, static_folder="temp", static_url_path="/video")
+CORS(app, expose_headers=["X-Extra-Info", "X-User-Message"])  # Ensure headers are accessible
 
 # Initialize Mediapipe Pose solution
 mp_pose = mp.solutions.pose
@@ -58,6 +65,93 @@ def calculate_cog(landmarks: list, image_width: int, image_height: int) -> tuple
         return int(weighted_sum_x / total_weight), int(weighted_sum_y / total_weight)
     return None
 
+
+def process_video(input_path: str, output_path: str) -> str:
+    """
+    Process the input video to add COG markers and save the output.
+
+    Args:
+        input_path (str): Path to the input video file.
+        output_path (str): Path to save the processed video file.
+
+    Returns:
+        str: Path to the re-encoded output video file.
+    """
+    cap = cv2.VideoCapture(input_path)
+    if not cap.isOpened():
+        raise Exception("Error: Cannot open video.")
+
+    # Get video properties
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frame_rate = cap.get(cv2.CAP_PROP_FPS)
+
+    # Initialize VideoWriter
+    fourcc = cv2.VideoWriter.fourcc(*"mp4v")
+    out = cv2.VideoWriter(output_path, fourcc, frame_rate, (frame_width, frame_height))
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image_height, image_width, _ = frame.shape
+
+        results = pose.process(rgb_frame)
+        if results.pose_landmarks:
+            mp_drawing.draw_landmarks(
+                frame,
+                results.pose_landmarks,
+                mp_pose.POSE_CONNECTIONS,
+                mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2),
+                mp_drawing.DrawingSpec(color=(255, 0, 0), thickness=2),
+            )
+            cog_coordinates = calculate_cog(
+                results.pose_landmarks.landmark, image_width, image_height
+            )
+            if cog_coordinates:
+                cv2.circle(frame, cog_coordinates, 8, (0, 0, 255), -1)
+                cv2.putText(
+                    frame,
+                    f"COG: {cog_coordinates}",
+                    (cog_coordinates[0] + 10, cog_coordinates[1] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 0, 255),
+                    2,
+                )
+
+        out.write(frame)
+
+    cap.release()
+    out.release()
+
+    # Use ffmpeg to re-encode the video to the desired format (e.g., MP4)
+    reencoded_output_path = os.path.join(
+        "temp", "formatted_" + os.path.basename(input_path)
+    )
+    ffmpeg_command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        output_path,
+        "-vcodec",
+        "libx264",
+        "-acodec",
+        "aac",
+        "-strict",
+        "experimental",
+        reencoded_output_path,
+    ]
+    subprocess.run(ffmpeg_command, check=True)
+
+    # Clean up temporary files
+    if os.path.exists(output_path):
+        os.remove(output_path)
+
+    return reencoded_output_path
+
 def check_orientation(landmarks):
     """
     Determines orientation (facing forward or sideways) based on shoulder z-depth difference.
@@ -77,7 +171,7 @@ def check_orientation(landmarks):
     else:
         return "Sideways"
 
-def get_stability():
+def get_stability(input_path, output_path) -> str:
     """
     Analyze video for stability by plotting COG and BOS and detecting instability.
 
@@ -92,7 +186,7 @@ def get_stability():
     fall_count = 0
     unstable_frames_count = 0
     is_stable = False
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
         raise Exception("Error: Cannot open video.")
 
@@ -103,6 +197,7 @@ def get_stability():
 
     # Initialize VideoWriter
     fourcc = cv2.VideoWriter.fourcc(*"MP4v")
+    out = cv2.VideoWriter(output_path, fourcc, frame_rate, (frame_width, frame_height))
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -127,7 +222,7 @@ def get_stability():
                     mp_drawing.DrawingSpec(color=(255, 0, 0), thickness=2),
                 )
                 cog_coordinates = calculate_cog(
-                    landmarks, image_width, image_height
+                    results.pose_landmarks.landmark, image_width, image_height
                 )
                 if cog_coordinates:
                     cv2.circle(frame, cog_coordinates, 8, (0, 0, 255), -1)
@@ -141,10 +236,14 @@ def get_stability():
                         2,
                     )
 
+                # Extract keypoints
+                keypoints = results.pose_landmarks.landmark
+
                 # Define BOS (e.g., foot region - here using LEFT_FOOT_INDEX)
-                base_x = landmarks[mp.solutions.pose.PoseLandmark.LEFT_FOOT_INDEX].x
-                base_y = landmarks[mp.solutions.pose.PoseLandmark.LEFT_FOOT_INDEX].y
-                
+                base_x = keypoints[mp.solutions.pose.PoseLandmark.LEFT_FOOT_INDEX].x
+                base_foot_x = keypoints[mp_pose.PoseLandmark.LEFT_KNEE].x
+                base_y = keypoints[mp.solutions.pose.PoseLandmark.LEFT_FOOT_INDEX].y
+
                 base_foot1_y =landmarks[mp_pose.PoseLandmark.RIGHT_FOOT_INDEX].y
                 base_foot2_y =landmarks[mp_pose.PoseLandmark.LEFT_FOOT_INDEX].y 
                 base_ankle1_y = landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE].y
@@ -156,6 +255,14 @@ def get_stability():
                     abs(base_foot1_y - base_foot2_y) > thresold or abs(base_ankle1_y - base_ankle2_y) > thresold
                 )  # Example threshold
 
+
+                cv2.circle(
+                    frame,
+                    (int(base_x * frame.shape[1]), int(base_y * frame.shape[0])),
+                    5,
+                    (255, 255, 0),
+                    -1,
+                )
                 cv2.putText(frame, f"Orientation: {orientation}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 
                 cv2.putText(
@@ -197,14 +304,11 @@ def get_stability():
                         (0, 255, 0),
                         2,
                     )
-                    
-        cv2.imshow("Real-Time Pose Detection", frame)
-        
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):  # Press 'q' to exit
-            break
+        out.write(frame)
 
     cap.release()
+    out.release()
     
     unstable_time = unstable_frames_count / frame_rate
     print("Unstable time: ", unstable_time)
@@ -215,9 +319,78 @@ def get_stability():
         average_instable_time = 0
     print("Average instability time: ", average_instable_time)
     
+    # Use ffmpeg to re-encode the video to the desired format (e.g., MP4)
+    reencoded_output_path = os.path.join(
+        "temp", "formatted_" + os.path.basename(input_path)
+    )
+    ffmpeg_command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        output_path,
+        "-vcodec",
+        "libx264",
+        "-acodec",
+        "aac",
+        "-strict",
+        "experimental",
+        reencoded_output_path,
+    ]
+    subprocess.run(ffmpeg_command, check=True)
+
+    # Clean up temporary files
+    if os.path.exists(output_path):
+        os.remove(output_path)
+
+    return reencoded_output_path, unstable_time, average_instable_time
 
 
-# @app.route("/stability", methods=["POST"])
+@app.route("/")
+def index():
+    """
+    Root endpoint for the API.
+
+    Returns:
+        str: Welcome message.
+    """
+    return "Welcome to the COG API!"
+
+
+@app.route("/process_video", methods=["POST"])
+def upload_and_process_video():
+    """
+    Endpoint to upload and process a video file.
+
+    Returns:
+        Response: Processed video file or error message.
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "No file part in the request"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No file selected for uploading"}), 400
+
+    # Save the uploaded file temporarily
+    input_path = os.path.join("temp", file.filename)
+    output_path = os.path.join("temp", "processed_" + file.filename)
+    os.makedirs("temp", exist_ok=True)
+    file.save(input_path)
+
+    try:
+        output_file = process_video(input_path, output_path)
+        return send_file(output_file, mimetype="video/mp4")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        # Clean up temporary files
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        if os.path.exists(output_path):
+            os.remove(output_path)
+
+
+@app.route("/stability", methods=["POST"])
 def stability():
     """
     Endpoint to plot the Center of Gravity (COG) and Base of Support (BOS) on the video
@@ -267,5 +440,8 @@ def stability():
             #     os.remove(output_path)
     except Exception as e:
         print(e)
+        return jsonify({"error": str(e)}), 500
 
-get_stability()
+if __name__ == "__main__":
+    # Run the Flask app on all available network interfaces
+    app.run(host="0.0.0.0", port=5000, debug=True)

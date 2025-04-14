@@ -2,7 +2,7 @@ import cv2
 import os
 
 # Path to the video file
-video_path = "backend/temp/formatted_sudo.mp4"
+video_path = "backend/temp/formatted_dance.mp4"
 
 # Directory to save frames
 output_folder = f"frames/{os.path.splitext(os.path.basename(video_path))[0]}"
