@@ -46,7 +46,8 @@ def classify_direction(toe_point, y_points):
         "Anterior": point_to_line_distance(toe_point, A, midpoint)
     }
     direction = min(distances, key=distances.get)
-    return direction, distances[direction]
+    final_distances = calculate_distance(toe_point, y_points[0])
+    return direction, final_distances
 
 def draw_y_shape(frame, center, p1, p2, pixel_per_cm=None):
     center = np.array(center, dtype=np.float32)
@@ -239,7 +240,8 @@ def hand_gesture_y_shape():
                     direction, px_dist = classify_direction(toe_point, points)
                     dist_cm = round(px_dist / pixel_per_cm, 2)
                     max_reach[direction] = max(max_reach[direction], dist_cm)
-
+                    
+                    mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
                     cv2.putText(frame, f"Direction: {direction}", (10, 100),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
                     cv2.putText(frame, f"Current: {dist_cm:.2f} cm", (10, 140),
@@ -272,6 +274,7 @@ def hand_gesture_y_shape():
 
     cap.release()
     cv2.destroyAllWindows()
+    print("Max reach:", max_reach)
 
 
 hand_gesture_y_shape()
