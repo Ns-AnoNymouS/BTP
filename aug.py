@@ -14,6 +14,40 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_drawing = mp.solutions.drawing_utils
 
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose(
+    static_image_mode=False, min_detection_confidence=0.5, min_tracking_confidence=0.5
+)
+
+REACHING_TOE = mp_pose.PoseLandmark.RIGHT_FOOT_INDEX
+STATIC_TOE = mp_pose.PoseLandmark.LEFT_FOOT_INDEX
+
+initial_position = None
+frame_count = 0
+reach_detected = False
+
+def calculate_distance(pt1, pt2):
+    return math.hypot(pt1[0] - pt2[0], pt1[1] - pt2[1])
+
+def point_to_line_distance(pt, line_start, line_end):
+    px, py = pt
+    x1, y1 = line_start
+    x2, y2 = line_end
+    if (x1, y1) == (x2, y2):
+        return calculate_distance(pt, line_start)
+    return abs((y2 - y1)*px - (x2 - x1)*py + x2*y1 - y2*x1) / math.hypot(x2 - x1, y2 - y1)
+
+def classify_direction(toe_point, y_points):
+    A, B, C = y_points
+    midpoint = ((B[0] + C[0]) // 2, (B[1] + C[1]) // 2)
+    distances = {
+        "Posteromedial": point_to_line_distance(toe_point, A, B),
+        "Posterolateral": point_to_line_distance(toe_point, A, C),
+        "Anterior": point_to_line_distance(toe_point, A, midpoint)
+    }
+    direction = min(distances, key=distances.get)
+    return direction, distances[direction]
+
 def draw_y_shape(frame, center, p1, p2, pixel_per_cm=None):
     center = np.array(center, dtype=np.float32)
     p1 = np.array(p1, dtype=np.float32)
@@ -38,11 +72,20 @@ def draw_y_shape(frame, center, p1, p2, pixel_per_cm=None):
 
     # Check bounds
     all_pts = [tuple(center.astype(int)), p1_ext, p2_ext, tail_point]
-    fits_screen = all(0 <= x < SCREEN_WIDTH and 0 <= y < SCREEN_HEIGHT for (x, y) in all_pts)
+    fits_screen = all(
+        0 <= x < SCREEN_WIDTH and 0 <= y < SCREEN_HEIGHT for (x, y) in all_pts
+    )
 
     if not fits_screen and pixel_per_cm:
-        cv2.putText(frame, "Move the screen farther!", (10, 100),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+        cv2.putText(
+            frame,
+            "Move the screen farther!",
+            (10, 100),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 0, 255),
+            3,
+        )
     else:
         cv2.line(frame, tuple(center.astype(int)), p1_ext, (0, 0, 255), 2)
         cv2.line(frame, tuple(center.astype(int)), p2_ext, (0, 0, 255), 2)
@@ -51,13 +94,31 @@ def draw_y_shape(frame, center, p1, p2, pixel_per_cm=None):
     # Show angle
     angle_rad = np.arccos(np.clip(np.dot(v1_norm, v2_norm), -1.0, 1.0))
     angle_deg = np.degrees(angle_rad)
-    cv2.putText(frame, f"Angle: {angle_deg:.2f} deg", (10, 70),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+    cv2.putText(
+        frame,
+        f"Angle: {angle_deg:.2f} deg",
+        (10, 70),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (0, 255, 255),
+        2,
+    )
+
 
 def hand_gesture_y_shape():
+    global initial_position, frame_count, reach_detected
+
     cap = cv2.VideoCapture(0)
-    cv2.namedWindow("Y Shape Drawer", cv2.WND_PROP_FULLSCREEN)
-    cv2.setWindowProperty("Y Shape Drawer", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    cv2.namedWindow("Y Balance Detection", cv2.WND_PROP_FULLSCREEN)
+    cv2.setWindowProperty(
+        "Y Balance Detection", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN
+    )
+
+    max_reach = {
+        "Anterior": 0,
+        "Posteromedial": 0,
+        "Posterolateral": 0
+    }
 
     points = []
     calibrating_points = []
@@ -78,76 +139,174 @@ def hand_gesture_y_shape():
         index_points = {}
         h, w = frame.shape[:2]
 
-        if results.multi_hand_landmarks and len(results.multi_handedness) == len(results.multi_hand_landmarks):
-            for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
-                mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-                label = results.multi_handedness[idx].classification[0].label
+        if pixel_per_cm is None:
+            if results.multi_hand_landmarks and len(results.multi_handedness) == len(
+                results.multi_hand_landmarks
+            ):
+                for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
+                    mp_drawing.draw_landmarks(
+                        frame, hand_landmarks, mp_hands.HAND_CONNECTIONS
+                    )
+                    label = results.multi_handedness[idx].classification[0].label
 
-                index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-                x, y = int(index_tip.x * w), int(index_tip.y * h)
-                index_points[label] = (x, y)
-                cv2.circle(frame, (x, y), 10, (255, 0, 0), -1)
+                    index_tip = hand_landmarks.landmark[
+                        mp_hands.HandLandmark.INDEX_FINGER_TIP
+                    ]
+                    x, y = int(index_tip.x * w), int(index_tip.y * h)
+                    index_points[label] = (x, y)
+                    cv2.circle(frame, (x, y), 10, (255, 0, 0), -1)
 
-        if "Left" in index_points and "Right" in index_points:
-            lx, ly = index_points["Left"]
-            rx, ry = index_points["Right"]
-            dist = math.hypot(lx - rx, ly - ry)
+            if "Left" in index_points and "Right" in index_points:
+                lx, ly = index_points["Left"]
+                rx, ry = index_points["Right"]
+                dist = math.hypot(lx - rx, ly - ry)
 
-            if dist < 10:
-                current_time = time.time()
-                if current_time - last_point_time >= 1.5:
-                    point = ((lx + rx) // 2, (ly + ry) // 2)
-                    if len(points) < 3:
-                        if len(points) == 0 or points[-1] != point:
-                            points.append(point)
-                            last_point_time = current_time
-                    elif len(calibrating_points) < 2:
-                        if len(calibrating_points) == 0 or calibrating_points[-1] != point:
-                            calibrating_points.append(point)
-                            last_point_time = current_time
-                    elif len(distance_points) < 2:
-                        if len(distance_points) == 0 or distance_points[-1] != point:
-                            distance_points.append(point)
-                            last_point_time = current_time
+                if dist < 10:
+                    current_time = time.time()
+                    if current_time - last_point_time >= 1.5:
+                        point = ((lx + rx) // 2, (ly + ry) // 2)
+                        if len(points) < 3:
+                            if len(points) == 0 or points[-1] != point:
+                                points.append(point)
+                                last_point_time = current_time
+                        elif len(calibrating_points) < 2:
+                            if (
+                                len(calibrating_points) == 0
+                                or calibrating_points[-1] != point
+                            ):
+                                calibrating_points.append(point)
+                                last_point_time = current_time
+                        elif len(distance_points) < 2:
+                            if (
+                                len(distance_points) == 0
+                                or distance_points[-1] != point
+                            ):
+                                distance_points.append(point)
+                                last_point_time = current_time
 
-        # Calibration
-        if len(calibrating_points) == 2 and pixel_per_cm is None:
-            px_dist = math.dist(calibrating_points[0], calibrating_points[1])
-            pixel_per_cm = px_dist / REAL_WORLD_CM
-            print(f"[INFO] Calibration done: {pixel_per_cm:.2f} pixels/cm")
+            # Calibration
+            if len(calibrating_points) == 2 and pixel_per_cm is None:
+                px_dist = math.dist(calibrating_points[0], calibrating_points[1])
+                pixel_per_cm = px_dist / REAL_WORLD_CM
+                print(f"[INFO] Calibration done: {pixel_per_cm:.2f} pixels/cm")
 
-        # Draw collected points
-        for i, point in enumerate(points):
-            cv2.circle(frame, point, 6, (0, 255, 0), -1)
-            cv2.putText(frame, f"Y{i+1}: {point}", (point[0] + 10, point[1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            # Draw collected points
+            for i, point in enumerate(points):
+                cv2.circle(frame, point, 6, (0, 255, 0), -1)
+                cv2.putText(
+                    frame,
+                    f"Y{i+1}: {point}",
+                    (point[0] + 10, point[1] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 0),
+                    1,
+                )
 
-        for i, point in enumerate(calibrating_points):
-            cv2.circle(frame, point, 6, (255, 0, 0), -1)
-            cv2.putText(frame, f"C{i+1}: {point}", (point[0] + 10, point[1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+            for i, point in enumerate(calibrating_points):
+                cv2.circle(frame, point, 6, (255, 0, 0), -1)
+                cv2.putText(
+                    frame,
+                    f"C{i+1}: {point}",
+                    (point[0] + 10, point[1] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (255, 0, 0),
+                    1,
+                )
 
-        for i, point in enumerate(distance_points):
-            cv2.circle(frame, point, 6, (0, 255, 255), -1)
-            cv2.putText(frame, f"D{i+1}: {point}", (point[0] + 10, point[1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+            for i, point in enumerate(distance_points):
+                cv2.circle(frame, point, 6, (0, 255, 255), -1)
+                cv2.putText(
+                    frame,
+                    f"D{i+1}: {point}",
+                    (point[0] + 10, point[1] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 255),
+                    1,
+                )
+        else:
+            results = pose.process(rgb)
+            if results.pose_landmarks:
+                landmarks = results.pose_landmarks.landmark
+                moving_toe = landmarks[REACHING_TOE]
+                static_toe = landmarks[STATIC_TOE]
+
+                x = int(moving_toe.x * w)
+                y = int(moving_toe.y * h)
+                static_x = int(static_toe.x * w)
+                static_y = int(static_toe.y * h)
+
+                if initial_position is None and frame_count > 10:
+                    initial_position = (x, y)
+                    print(f"Initial Position: {initial_position}")
+                elif initial_position:
+                    dx = x - initial_position[0]
+                    dy = y - initial_position[1]
+
+                    direction = ""
+                    distance_cm = 0
+
+                    if dx > 30 and abs(dy) < 40:
+                        direction = "Anterior Reach"
+                        distance_cm = abs(x - static_x) / pixel_per_cm
+                    elif dx < -30:
+                        pixel_distance = math.hypot(x - static_x, y - static_y)
+                        distance_cm = pixel_distance / pixel_per_cm
+                        if y < static_y + 8:
+                            direction = "Posterolateral Reach"
+                        else:
+                            direction = "Posteromedial Reach"
+                    if direction:
+                        text = f"{direction}: {distance_cm:.1f} cm"
+                        cv2.putText(
+                            frame,
+                            text,
+                            (20, 50),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1,
+                            (0, 255, 0),
+                            2,
+                        )
+                        if not reach_detected:
+                            print(
+                                f"Reach Detected: {direction}, Distance: {distance_cm:.1f} cm"
+                            )
+                            reach_detected = True
+                            
+                    mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+                    cv2.circle(frame, (x, y), 6, (255, 0, 0), -1)  # Reaching toe
+                    cv2.circle(frame, (static_x, static_y), 6, (0, 255, 255), -1)  # Static toe
+            frame_count += 1
 
         # Always draw Y once 3 points are selected (scaled if calibrated)
         if len(points) == 3:
-            draw_y_shape(frame, points[0], points[1], points[2], pixel_per_cm)
-
-        # Show measurement
-        if len(distance_points) == 2 and pixel_per_cm:
-            px = math.dist(distance_points[0], distance_points[1])
-            cm = px / pixel_per_cm
-            cv2.putText(frame, f"Measured Distance: {cm:.2f} cm", (10, 40),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
-
-        cv2.imshow("Y Shape Drawer", frame)
+            center = np.array(points[0], dtype=np.int32)
+            p1 = np.array(points[1], dtype=np.int32)
+            p2 = np.array(points[2], dtype=np.int32)
+            if ((p1[0] < center[0] < p2[0]) or (p2[0] < center[0] < p1[0])) and (
+                (p1[1] < center[1] and p2[1] < center[1])
+                or (p1[1] > center[1] and p2[1] > center[1])
+            ):
+                cv2.putText(
+                    frame,
+                    "You should provide the side view of the Y shape!",
+                    (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (0, 0, 255),
+                    2,
+                )
+            else:
+                draw_y_shape(frame, points[0], points[1], points[2], pixel_per_cm)
+        
+        cv2.imshow("Y Balance Detection", frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 
     cap.release()
     cv2.destroyAllWindows()
+
 
 hand_gesture_y_shape()
