@@ -230,56 +230,21 @@ def hand_gesture_y_shape():
             results = pose.process(rgb)
             if results.pose_landmarks:
                 landmarks = results.pose_landmarks.landmark
-                moving_toe = landmarks[REACHING_TOE]
-                static_toe = landmarks[STATIC_TOE]
+                left_toe = landmarks[mp_pose.PoseLandmark.LEFT_FOOT_INDEX]
+                toe_point = (int(left_toe.x * w), int(left_toe.y * h))
 
-                x = int(moving_toe.x * w)
-                y = int(moving_toe.y * h)
-                static_x = int(static_toe.x * w)
-                static_y = int(static_toe.y * h)
+                cv2.circle(frame, toe_point, 8, (0, 0, 255), -1)
 
-                if initial_position is None and frame_count > 10:
-                    initial_position = (x, y)
-                    print(f"Initial Position: {initial_position}")
-                elif initial_position:
-                    dx = x - initial_position[0]
-                    dy = y - initial_position[1]
+                if toe_point:
+                    direction, px_dist = classify_direction(toe_point, points)
+                    dist_cm = round(px_dist / pixel_per_cm, 2)
+                    max_reach[direction] = max(max_reach[direction], dist_cm)
 
-                    direction = ""
-                    distance_cm = 0
-
-                    if dx > 30 and abs(dy) < 40:
-                        direction = "Anterior Reach"
-                        distance_cm = abs(x - static_x) / pixel_per_cm
-                    elif dx < -30:
-                        pixel_distance = math.hypot(x - static_x, y - static_y)
-                        distance_cm = pixel_distance / pixel_per_cm
-                        if y < static_y + 8:
-                            direction = "Posterolateral Reach"
-                        else:
-                            direction = "Posteromedial Reach"
-                    if direction:
-                        text = f"{direction}: {distance_cm:.1f} cm"
-                        cv2.putText(
-                            frame,
-                            text,
-                            (20, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1,
-                            (0, 255, 0),
-                            2,
-                        )
-                        if not reach_detected:
-                            print(
-                                f"Reach Detected: {direction}, Distance: {distance_cm:.1f} cm"
-                            )
-                            reach_detected = True
-                            
-                    mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-                    cv2.circle(frame, (x, y), 6, (255, 0, 0), -1)  # Reaching toe
-                    cv2.circle(frame, (static_x, static_y), 6, (0, 255, 255), -1)  # Static toe
-            frame_count += 1
-
+                    cv2.putText(frame, f"Direction: {direction}", (10, 100),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                    cv2.putText(frame, f"Current: {dist_cm:.2f} cm", (10, 140),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 255, 200), 2)
+            
         # Always draw Y once 3 points are selected (scaled if calibrated)
         if len(points) == 3:
             center = np.array(points[0], dtype=np.int32)
