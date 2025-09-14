@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Y Balance Detection - Instructions</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Poppins", sans-serif;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      color: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 900px;
+      width: 100%;
+      background: rgba(30, 41, 59, 0.85);
+      border-radius: 20px;
+      padding: 3rem 2rem;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(10px);
+      animation: fadeIn 1s ease-in-out;
+    }
+
+    h1 {
+      font-size: 2.8rem;
+      margin-bottom: 0.5rem;
+      color: #38bdf8;
+      text-align: center;
+    }
+
+    p.subtitle {
+      font-size: 1.2rem;
+      text-align: center;
+      margin-bottom: 2rem;
+      color: #cbd5e1;
+    }
+
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .step {
+      background: rgba(51, 65, 85, 0.9);
+      padding: 1.5rem;
+      border-radius: 15px;
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      transition: transform 0.3s ease;
+    }
+
+    .step:hover {
+      transform: translateY(-5px);
+    }
+
+    .step-number {
+      flex-shrink: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #06b6d4, #3b82f6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.2rem;
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(6, 182, 212, 0.4);
+    }
+
+    .step-content h3 {
+      margin: 0;
+      font-size: 1.2rem;
+      color: #f1f5f9;
+    }
+
+    .step-content p {
+      margin-top: 0.3rem;
+      font-size: 1rem;
+      line-height: 1.6;
+      color: #cbd5e1;
+    }
+
+    .actions {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 2.5rem;
+    }
+
+    .btn {
+      padding: 0.9rem 2rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: white;
+      background: linear-gradient(135deg, #06b6d4, #3b82f6);
+      border: none;
+      border-radius: 12px;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(6, 182, 212, 0.4);
+    }
+
+    .btn:hover {
+      background: linear-gradient(135deg, #0891b2, #2563eb);
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(6, 182, 212, 0.6);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Y Balance Test</h1>
+    <p class="subtitle">Follow these steps carefully before starting the test</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <h3>Check your camera</h3>
+          <p>Make sure your camera is working, and you are fully visible with enough space in front of you to draw the Y on the ground.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <h3>Mark the Y center</h3>
+          <p>Place a book or object on the ground as a reference. Use both index fingertips together to mark the center point, then mark the other two points for the Y arms.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <h3>Calibrate with a card</h3>
+          <p>Place a debit card, credit card, or PAN card on one side of the Y. Point the two corners of the longer edge — the Y will adjust to the correct scale automatically.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <h3>Perform the test</h3>
+          <p>Stand with one toe at the Y center and stretch your other toe forward along each Y direction (Anterior, Posteromedial, Posterolateral) as far as possible.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" onclick="alert('Camera test: Please ensure your camera is enabled and working!')">
+        Check Camera
+      </button>
+      <a href="test.html" class="btn">Start the Test</a>
+    </div>
+  </div>
+</body>
+</html>

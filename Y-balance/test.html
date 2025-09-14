@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Y Balance Detection</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: black;
+      }
+      #output {
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+      #video {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <video id="video" playsinline autoplay></video>
+    <canvas id="output"></canvas>
+
+    <!-- MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+    <script>
+      const REAL_WORLD_CM = 8.56; // card width in cm
+      const Y_LENGTH_CM = 120; // Y-stick length
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("output");
+      const ctx = canvas.getContext("2d");
+
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      let points = [];
+      let calibrating = [];
+      let pixelPerCm = null;
+      let lastPointTime = 0;
+      let maxReach = { Anterior: 0, Posteromedial: 0, Posterolateral: 0 };
+
+      function distance(p1, p2) {
+        return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      }
+
+      function pointToLineDistance(pt, a, b) {
+        if (a.x === b.x && a.y === b.y) return distance(pt, a);
+        return (
+          Math.abs(
+            (b.y - a.y) * pt.x - (b.x - a.x) * pt.y + b.x * a.y - b.y * a.x
+          ) / Math.hypot(b.x - a.x, b.y - a.y)
+        );
+      }
+
+      function classifyDirection(toe, [A, B, C]) {
+        const mid = { x: (B.x + C.x) / 2, y: (B.y + C.y) / 2 };
+        const dists = {
+          Posteromedial: pointToLineDistance(toe, A, B),
+          Posterolateral: pointToLineDistance(toe, A, C),
+          Anterior: pointToLineDistance(toe, A, mid),
+        };
+        let direction = Object.keys(dists).reduce((a, b) =>
+          dists[a] < dists[b] ? a : b
+        );
+        return [direction, distance(toe, A)];
+      }
+
+      function drawY(center, p1, p2) {
+        let v1 = { x: p1.x - center.x, y: p1.y - center.y };
+        let v2 = { x: p2.x - center.x, y: p2.y - center.y };
+        let norm1 = Math.hypot(v1.x, v1.y);
+        let norm2 = Math.hypot(v2.x, v2.y);
+        v1 = { x: v1.x / norm1, y: v1.y / norm1 };
+        v2 = { x: v2.x / norm2, y: v2.y / norm2 };
+        let length = pixelPerCm ? Y_LENGTH_CM * pixelPerCm : norm1;
+
+        const p1ext = {
+          x: center.x + v1.x * length,
+          y: center.y + v1.y * length,
+        };
+        const p2ext = {
+          x: center.x + v2.x * length,
+          y: center.y + v2.y * length,
+        };
+        const bis = { x: -(v1.x + v2.x) / 2, y: -(v1.y + v2.y) / 2 };
+        const bisLen = Math.hypot(bis.x, bis.y);
+        const tail = {
+          x: center.x + (bis.x / bisLen) * length,
+          y: center.y + (bis.y / bisLen) * length,
+        };
+
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(center.x, center.y);
+        ctx.lineTo(p1ext.x, p1ext.y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(center.x, center.y);
+        ctx.lineTo(p2ext.x, p2ext.y);
+        ctx.stroke();
+        ctx.strokeStyle = "yellow";
+        ctx.beginPath();
+        ctx.moveTo(center.x, center.y);
+        ctx.lineTo(tail.x, tail.y);
+        ctx.stroke();
+      }
+
+      // ---- MediaPipe Hands ----
+      const hands = new Hands({
+        locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`,
+      });
+      hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.7,
+      });
+
+      hands.onResults((res) => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+
+        ctx.drawImage(res.image, 0, 0, canvas.width, canvas.height);
+
+        if (res.multiHandLandmarks && res.multiHandedness) {
+          let indexPoints = {};
+          res.multiHandLandmarks.forEach((landmarks, i) => {
+            const handedness = res.multiHandedness[i].label;
+            const idx = landmarks[8];
+            indexPoints[handedness] = {
+              x: idx.x * canvas.width,
+              y: idx.y * canvas.height,
+            };
+
+            window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, {
+              color: "#0f0",
+              lineWidth: 2,
+            });
+            window.drawLandmarks(ctx, landmarks, {
+              color: "#ff0",
+              lineWidth: 1,
+            });
+          });
+
+          if (
+            "Left" in indexPoints &&
+            "Right" in indexPoints &&
+            pixelPerCm === null
+          ) {
+            const lx = indexPoints["Left"].x,
+              ly = indexPoints["Left"].y;
+            const rx = indexPoints["Right"].x,
+              ry = indexPoints["Right"].y;
+            const dist = Math.hypot(lx - rx, ly - ry);
+            if (dist < 30) {
+              const now = Date.now();
+              if (now - lastPointTime > 1500) {
+                const pt = { x: (lx + rx) / 2, y: (ly + ry) / 2 };
+                if (points.length < 3) points.push(pt);
+                else if (calibrating.length < 2) calibrating.push(pt);
+                lastPointTime = now;
+              }
+            }
+          }
+        }
+
+        points.forEach((p) => {
+          ctx.fillStyle = "lime";
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
+          ctx.fill();
+        });
+        calibrating.forEach((p) => {
+          ctx.fillStyle = "cyan";
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
+          ctx.fill();
+        });
+
+        if (calibrating.length === 2 && pixelPerCm === null) {
+          pixelPerCm = distance(calibrating[0], calibrating[1]) / REAL_WORLD_CM;
+          console.log("Calibrated:", pixelPerCm, "px/cm");
+        }
+
+        if (points.length === 3) drawY(points[0], points[1], points[2]);
+
+        ctx.restore();
+      });
+
+      // ---- MediaPipe Pose ----
+      const pose = new Pose({
+        locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`,
+      });
+      pose.setOptions({
+        modelComplexity: 1,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+
+      pose.onResults((res) => {
+        if (!res.poseLandmarks || !pixelPerCm || points.length < 3) return;
+
+        ctx.save();
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+
+        // ✅ Draw skeleton only AFTER calibration
+        window.drawConnectors(ctx, res.poseLandmarks, window.POSE_CONNECTIONS, {
+          color: "#00f",
+          lineWidth: 3,
+        });
+        window.drawLandmarks(ctx, res.poseLandmarks, {
+          color: "white",
+          lineWidth: 1,
+        });
+
+        // Draw Y
+        drawY(points[0], points[1], points[2]);
+
+        const leftToe = res.poseLandmarks[31];
+        const rightToe = res.poseLandmarks[32];
+
+        const center = points[0];
+        let toePt = null;
+        let dir = "";
+        let distCm = 0;
+
+        if (leftToe) {
+          const lPt = {
+            x: leftToe.x * canvas.width,
+            y: leftToe.y * canvas.height,
+          };
+          if (distance(lPt, center) < 200) toePt = lPt;
+        }
+
+        if (rightToe) {
+          const rPt = {
+            x: rightToe.x * canvas.width,
+            y: rightToe.y * canvas.height,
+          };
+          if (!toePt && distance(rPt, center) < 200) toePt = rPt;
+        }
+        ctx.restore();
+
+        if (toePt) {
+          [dir, pxDist] = classifyDirection(toePt, points);
+          distCm = pxDist / pixelPerCm;
+          maxReach[dir] = Math.max(maxReach[dir], distCm);
+
+          ctx.fillStyle = "white";
+          ctx.font = "20px Arial";
+          ctx.fillText(`Direction: ${dir}`, 10, 30);
+          ctx.fillText(`Current: ${distCm.toFixed(2)} cm`, 10, 60);
+        } else {
+          ctx.fillStyle = "yellow";
+          ctx.font = "20px Arial";
+          ctx.fillText(
+            "Place your toe near the center of the Y to start the test",
+            10,
+            50
+          );
+        }
+
+        ctx.fillStyle = "white";
+        ctx.font = "20px Arial";
+        ctx.fillText(
+          `Max: A=${maxReach.Anterior.toFixed(
+            2
+          )}, PM=${maxReach.Posteromedial.toFixed(
+            2
+          )}, PL=${maxReach.Posterolateral.toFixed(2)}`,
+          10,
+          90
+        );
+      });
+
+      async function processFrame() {
+        await hands.send({ image: video });
+        await pose.send({ image: video });
+        requestAnimationFrame(processFrame);
+      }
+
+      navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          processFrame();
+        };
+      });
+    </script>
+  </body>
+</html>

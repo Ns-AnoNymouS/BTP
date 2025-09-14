@@ -333,7 +333,7 @@ def get_stability(input_path, output_path) -> str:
         os.remove(output_path)
 
     return reencoded_output_path, unstable_time, average_instable_time
-
+    
 
 @app.route("/")
 def index():
