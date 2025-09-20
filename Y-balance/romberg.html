@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Romberg Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: "Poppins", sans-serif;
+    }
+
+    body {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      padding: 2rem;
+      max-width: 900px;
+      width: 100%;
+      text-align: center;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      animation: fadeDown 0.8s ease forwards;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .title {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+      color: #38bdf8;
+      letter-spacing: 1px;
+    }
+
+    /* Stylish Button */
+    .btn {
+      background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+      color: #0f172a;
+      padding: 14px 36px;
+      border: none;
+      border-radius: 40px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 6px 15px rgba(56, 189, 248, 0.3);
+      letter-spacing: 0.5px;
+    }
+
+    .btn:hover {
+      background: linear-gradient(135deg, #0ea5e9, #38bdf8);
+      transform: translateY(-3px) scale(1.04);
+      box-shadow: 0 10px 25px rgba(56, 189, 248, 0.5);
+    }
+
+    .btn:active {
+      transform: translateY(0) scale(0.98);
+      box-shadow: 0 4px 10px rgba(56, 189, 248, 0.4);
+    }
+
+    canvas {
+      border-radius: 15px;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      margin: 1rem 0;
+      max-width: 100%;
+      display: none; /* hidden until test starts */
+    }
+
+    .status {
+      font-size: 1rem;
+      margin: 0.5rem 0;
+      color: #e2e8f0;
+      display: none; /* hidden until test starts */
+    }
+
+    .status span {
+      color: #38bdf8;
+      font-weight: 600;
+    }
+
+    @keyframes fadeDown {
+      0% {
+        opacity: 0;
+        transform: translateY(-30px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2 class="title">Romberg Test (Nose–Waist Line + Eye Status)</h2>
+    <button class="btn" id="startBtn">🚀 Start Test</button>
+    <video id="video" autoplay playsinline style="display:none"></video>
+    <canvas id="output" width="640" height="480"></canvas>
+
+    <!-- Stats (hidden until test starts) -->
+    <p class="status" id="angleText">Deviation: <span>--</span></p>
+    <p class="status" id="lengthText">Length: <span>--</span></p>
+    <p class="status" id="eyeStatus">Eyes: <span>--</span></p>
+  </div>
+
+  <audio id="alertSound" src="alert.mp3" preload="auto"></audio>
+
+  <script>
+    const videoElement = document.getElementById("video");
+    const canvasElement = document.getElementById("output");
+    const angleText = document.getElementById("angleText").querySelector("span");
+    const lengthText = document.getElementById("lengthText").querySelector("span");
+    const eyeStatus = document.getElementById("eyeStatus").querySelector("span");
+    const alertSound = document.getElementById("alertSound");
+    const statusElems = document.querySelectorAll(".status");
+
+    let latestPose = null;
+    let latestFace = null;
+    let eyesClosed = false;
+    let baselineDistance = null;
+    let lastBeepTime = 0;
+
+    const pose = new Pose({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
+    });
+    pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      enableSegmentation: false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+    pose.onResults((results) => {
+      latestPose = results;
+      drawAll();
+    });
+
+    const faceMesh = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+    });
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+    faceMesh.onResults((results) => {
+      latestFace = results;
+      drawAll();
+    });
+
+    function drawAll() {
+      if (!latestPose || !latestFace) return;
+
+      const ctx = canvasElement.getContext("2d");
+      ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      ctx.drawImage(latestPose.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      if (latestPose.poseLandmarks) {
+        const nose = latestPose.poseLandmarks[0];
+        const leftHip = latestPose.poseLandmarks[23];
+        const rightHip = latestPose.poseLandmarks[24];
+
+        const waistX = (leftHip.x + rightHip.x) / 2;
+        const waistY = (leftHip.y + rightHip.y) / 2;
+
+        const noseX = nose.x * canvasElement.width;
+        const noseY = nose.y * canvasElement.height;
+        const waistXpx = waistX * canvasElement.width;
+        const waistYpx = waistY * canvasElement.height;
+
+        let dx = waistXpx - noseX;
+        let dy = waistYpx - noseY;
+        let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+        let deviation = Math.abs(90 - Math.abs(angle));
+        angleText.innerText = `${deviation.toFixed(2)}°`;
+
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        if (!baselineDistance) baselineDistance = distance;
+        let diff = Math.abs(distance - baselineDistance);
+        lengthText.innerText = `${distance.toFixed(2)} px`;
+
+        if (latestFace.multiFaceLandmarks?.length > 0) {
+          const lm = latestFace.multiFaceLandmarks[0];
+          function dist(a, b) {
+            let dx = (lm[a].x - lm[b].x) * canvasElement.width;
+            let dy = (lm[a].y - lm[b].y) * canvasElement.height;
+            return Math.sqrt(dx * dx + dy * dy);
+          }
+          let leftEAR = dist(159, 145) / dist(33, 133);
+          let rightEAR = dist(386, 374) / dist(362, 263);
+          let ear = (leftEAR + rightEAR) / 2;
+
+          eyesClosed = ear < 0.2;
+          eyeStatus.innerText = eyesClosed ? "Closed" : "Open";
+        }
+
+        let lineColor = "lime";
+        if (deviation >= 10 || diff >= 10) {
+          lineColor = "red";
+          let now = Date.now();
+          if (now - lastBeepTime > 1000) {
+            alertSound.currentTime = 0;
+            alertSound.play();
+            lastBeepTime = now;
+          }
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(noseX, noseY);
+        ctx.lineTo(waistXpx, waistYpx);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = lineColor;
+        ctx.stroke();
+      }
+    }
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        videoElement.srcObject = stream;
+
+        async function processFrame() {
+          await pose.send({ image: videoElement });
+          await faceMesh.send({ image: videoElement });
+          requestAnimationFrame(processFrame);
+        }
+        processFrame();
+      } catch (err) {
+        alert("Camera access denied or not available.");
+        console.error(err);
+      }
+    }
+
+    document.getElementById("startBtn").addEventListener("click", () => {
+      startCamera();
+      document.getElementById("startBtn").style.display = "none";
+
+      // Show video + canvas + stats
+      videoElement.style.display = "block";
+      canvasElement.style.display = "block";
+      statusElems.forEach((el) => (el.style.display = "block"));
+    });
+  </script>
+</body>
+</html>
